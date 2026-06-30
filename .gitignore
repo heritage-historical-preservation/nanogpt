@@ -1,0 +1,21 @@
+# data
+data/raw/
+data/processed/*.bin
+data/processed/*.pkl
+
+# checkpoints
+checkpoints/*.pt
+checkpoints/*.ckpt
+
+# local tooling / session state
+.gsd/
+.bg-shell/
+.claude/
+.mcp.json
+
+# python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
