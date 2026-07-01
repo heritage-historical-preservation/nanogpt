@@ -30,7 +30,7 @@ class Config:
     grad_clip: float = 1.0
 
     # --- system ---
-    device: str = "cpu"          # set to "cuda" / "mps" if available
+    device: str = "mps"          # set to "cuda" / "mps" if available
     seed: int = 1337
 
     # --- io ---

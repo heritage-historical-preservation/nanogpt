@@ -1,21 +1,37 @@
 """Char-level tokenizer: build vocab, encode/decode."""
+import json
+from pathlib import Path
 
 
 class CharTokenizer:
-    def __init__(self, vocab):
-        self.stoi = {ch: i for i, ch in enumerate(vocab)}
-        self.itos = {i: ch for i, ch in enumerate(vocab)}
+    """Character-level tokenizer. The vocabulary is the set of unique
+    characters in the training corpus; each maps to an integer ID."""
+    def __init__(self, chars: list[str]):
+        self.chars = chars
+        self.stoi = {ch: i for i, ch in enumerate(chars)}
+        self.itos = {i: ch for i, ch in enumerate(chars)}
 
     @classmethod
-    def from_text(cls, text):
+    def from_text(cls, text: str) -> "CharTokenizer":
+        # The vocab IS the unique characters in the corpus.
+        # sorted() is load-bearing: it makes IDs deterministic, so the
+        # same corpus always yields the same mapping across runs.
         return cls(sorted(set(text)))
 
     @property
-    def vocab_size(self):
-        return len(self.stoi)
+    def vocab_size(self) -> int:
+        return len(self.chars)
 
-    def encode(self, s):
-        return [self.stoi[ch] for ch in s]
+    def encode(self, s: str) -> list[int]:
+        return [self.stoi[c] for c in s]
 
-    def decode(self, ids):
+    def decode(self, ids: list[int]) -> str:
         return "".join(self.itos[i] for i in ids)
+
+if __name__ == "__main__":
+    text = Path("data/processed/sample.txt").read_text(encoding="utf-8")
+    tok = CharTokenizer.from_text(text)
+    assert tok.decode(tok.encode(text)) == text, "round-trip failed!"
+    print(f"vocab_size: {tok.vocab_size}")
+    print(f"corpus length: {len(text)} chars")
+    print(f"vocab: {''.join(tok.chars)}")
