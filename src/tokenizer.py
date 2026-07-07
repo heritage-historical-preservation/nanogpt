@@ -27,6 +27,14 @@ class CharTokenizer:
 
     def decode(self, ids: list[int]) -> str:
         return "".join(self.itos[i] for i in ids)
+    
+    def save(self,path: Path) -> None:
+        path.write_text(json.dumps({"chars": self.chars}), encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: Path) -> "CharTokenizer":
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return cls(data["chars"])
 
 if __name__ == "__main__":
     text = Path("data/processed/sample.txt").read_text(encoding="utf-8")

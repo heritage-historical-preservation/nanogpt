@@ -36,28 +36,26 @@ class Dataset:
     
 
 if __name__ == "__main__":
+    from src.dataset import Dataset
     ds = Dataset(config)
+    model_emb = GPT(config).to(config.device)   # your embedding-only GPT
+    head = Head(config, head_size=16).to(config.device)
 
-    # 1. Confirm vocab_size derived correctly (should be 83, not 0).
-    print(f"vocab_size (derived): {config.vocab_size}")
+    xb, _ = ds.get_batch("train")
+    x = model_emb(xb)                # (B, T, C) embeddings
+    out = head(x)                    # (B, T, head_size)
+    print(f"input:  {tuple(x.shape)}")     # (64, 256, 384)
+    print(f"output: {tuple(out.shape)}")   # (64, 256, 16)
 
-    # 2. Confirm the train/val split.
-    print(f"train tokens: {len(ds.train_data)}")
-    print(f"val tokens:   {len(ds.val_data)}")
-
-    # 3. Pull a batch and check shapes.
-    xb, yb = ds.get_batch("train")
-    print(f"x shape: {tuple(xb.shape)}")   # (batch_size, block_size)
-    print(f"y shape: {tuple(yb.shape)}")   # same
-    print(f"device:  {xb.device}")
-
-    # 4. THE KEY CHECK: y is x shifted by one.
-    print("\nx[0, :10]:", xb[0, :10].tolist())
-    print("y[0, :10]:", yb[0, :10].tolist())
-    print("x[0, 1:11]:", xb[0, 1:11].tolist(), "  <- should equal y[0, :10]")
-
-    # 5. Programmatic proof of the shift, and a human-readable decode.
-    assert xb[0, 1:11].tolist() == yb[0, :10].tolist(), "shift-by-one broken!"
-    print("\nshift-by-one verified ✓")
-    print("x decoded:", repr(ds.tokenizer.decode(xb[0, :40].tolist())))
-    print("y decoded:", repr(ds.tokenizer.decode(yb[0, :40].tolist())))
+    # THE VISUAL CHECK: look at one attention matrix.
+    # Re-run the internals for a tiny slice to see the weights.
+    import torch
+    B, T, C = x.shape
+    q, k = head.query(x), head.key(x)
+    wei = q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5
+    wei = wei.masked_fill(head.tril[:T, :T] == 0, float("-inf"))
+    wei = torch.softmax(wei, dim=-1)
+    print("\nAttention row for token 4 (first 8 columns):")
+    print(wei[0, 4, :8].tolist())
+    print("Token 4 attending to positions 5-7 (the future):")
+    print(wei[0, 4, 5:8].tolist(), " <- should be all 0.0")

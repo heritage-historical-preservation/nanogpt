@@ -23,7 +23,7 @@ class Config:
     # --- training ---
     batch_size: int = 64
     max_iters: int = 5000
-    eval_interval: int = 250
+    eval_interval: int = 500
     eval_iters: int = 200
     learning_rate: float = 3e-4
     weight_decay: float = 1e-1

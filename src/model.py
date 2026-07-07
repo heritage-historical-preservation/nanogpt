@@ -44,11 +44,48 @@ class Head(nn.Module):
         out = wei @ v              # (B,T,T) @ (B,T,hs) -> (B, T, hs)
         return out
 class MultiHeadAttention(nn.Module): # several heads in parallel
-    pass
+    def __init__(self, cfg):
+        super().__init__()
+        assert cfg.n_embd % cfg.n_head == 0, "n_embd must be divisible by n_head"
+        head_size = cfg.n_embd // cfg.n_head
+        self.heads = nn.ModuleList([Head(cfg, head_size) for _ in range(cfg.n_head)])
+        self.proj = nn.Linear(cfg.n_embd, cfg.n_embd)
+        self.dropout = nn.Dropout(cfg.dropout)
+
+
+    def forward(self, x):
+        # x; (B, T, n_embd)
+        head_outputs = [head(x) for head in self.heads]
+        return self.dropout(self.proj(torch.cat(head_outputs, dim=-1)))
+    
 class FeedForward(nn.Module):        # the per-token MLP
-    pass
+    """Per token MLP: 'think about what attention gathered.'"""
+
+    def __init__(self,cfg):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(cfg.n_embd, 4 * cfg.n_embd), # expand: 384 -> 1536
+            nn.ReLU(),                              # nonlinearity
+            nn.Linear(4 * cfg.n_embd, cfg.n_embd),  # project back: 1536 -> 384
+            nn.Dropout(cfg.dropout),
+        )
+    
+    def forward(self, x):
+        return self.net(x)                  # (B, T, C) -> (B, T, C), shape unchanged
 class Block(nn.Module):              # attention + FFN + residuals
-    pass
+    def __init__(self, cfg):
+        super().__init__()
+        self.sa = MultiHeadAttention(cfg)
+        self.ffwd = FeedForward(cfg)
+        self.ln1 = nn.LayerNorm(cfg.n_embd)
+        self.ln2 = nn.LayerNorm(cfg.n_embd)
+
+
+    def forward(self, x):
+        # x: (B, T, n_embd)
+        x = x + self.sa(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
+        return x
 class GPT(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -61,8 +98,12 @@ class GPT(nn.Module):
         # Position embedding: a (block_size, n_embd) lookup table.
         # Row t is the learned vector for "being at position t".
         self.position_embedding = nn.Embedding(cfg.block_size, cfg.n_embd)
+        self.blocks = nn.Sequential(*(Block(cfg) for _ in range(cfg.n_layer)))
+        self.ln_f = nn.LayerNorm(cfg.n_embd)
+        # embedding space -> vocab logits
+        self.lm_head = nn.Linear(cfg.n_embd, cfg.vocab_size)
 
-    def forward(self, idx):
+    def forward(self, idx, targets=None):
         # idx: (B, T) tensor of token IDs.  B=batch, T=time/block_size.
         B, T = idx.shape
 
@@ -75,23 +116,40 @@ class GPT(nn.Module):
 
         # Add them. Broadcasting handles (B,T,C) + (T,C).
         x = tok_emb + pos_emb                                     # (B, T, C)
-        return x
-    
+
+        # (B,T,C), refined through n_layer blocks
+        x = self.blocks(x)
+        # (B,T,C)
+        x = self.ln_f(x)
+        # (B,T,vocab_size)
+        logits = self.lm_head(x)
+        #if targets is None: loss = None else: compute cross_entropy between logits and targets
+        if targets is None:
+            loss = None
+        else:
+            loss = F.cross_entropy(logits.view(B*T, -1), targets.view(B*T))
+
+        return logits, loss
+    @torch.no_grad()
+    def generate(self, idx, max_new_tokens, temperature=1.0):
+        # idx: (B, T) — the running context of token IDs, grows by one each iteration
+        for _ in range(max_new_tokens):
+            idx_cond = idx[:, -self.cfg.block_size:]
+            logits, _ = self(idx_cond)
+            logits = logits[:, -1, :]
+            logits = logits / temperature
+            probs = F.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat((idx, idx_next), dim=1)
+        return idx    
 
 if __name__ == "__main__":
     from src.dataset import Dataset
+    ds = Dataset(config)
+    model = GPT(config).to(config.device)   # your embedding-only GPT
 
-    ds = Dataset(config)              # sets config.vocab_size = 83
-    assert config.vocab_size > 0, "vocab_size wasn't set — dataset must run before model"
-    model = GPT(config).to(config.device)
-
-    xb, yb = ds.get_batch("train")    # (B, T) integer IDs
-    out = model(xb)                   # forward pass
-
-    print(f"input  shape: {tuple(xb.shape)}  dtype: {xb.dtype}")   # (64,256) int64
-    print(f"output shape: {tuple(out.shape)} dtype: {out.dtype}")  # (64,256,384) float
-    print(f"device: {out.device}")
-
-    # Parameter count so far (just the two embedding tables):
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f"params: {n_params:,}")
+    xb, yb = ds.get_batch("train")
+    logits, loss = model(xb, yb)
+    print(f"logits: {tuple(logits.shape)}")
+    print(f"loss: {loss.item():.4f}")
+    print(f"params: {sum(p.numel() for p in model.parameters()):,}")

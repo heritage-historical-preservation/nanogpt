@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from src.tokenizer import CharTokenizer
 
 RAW_PATH = Path("data/raw/source.txt")
 OUT_PATH = Path("data/processed/sample.txt")
@@ -51,6 +52,9 @@ if __name__ == "__main__":
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(cleaned, encoding="utf-8")
+    tok = CharTokenizer.from_text(cleaned)
+    tok.save(OUT_PATH.parent / "meta.json")
+    print(f"vocab_size:     {tok.vocab_size}")
 
     print(f"raw length:     {len(raw)}")
     print(f"cleaned length: {len(cleaned)}")
