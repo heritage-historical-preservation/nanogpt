@@ -51,5 +51,6 @@ Run everything from the repo root — data paths are root-relative.
 - IaC is SAM/CloudFormation only (no Terraform/CDK). Serving is a Lambda
   container image — do not introduce Fargate/always-on endpoints.
 - User runs interactive auth (`aws configure`); Claude runs `aws`/`sam` CLI
-  after credentials exist. Budget cap $10/month — flag anything that could
-  meaningfully bill.
+  after credentials exist. Account budget alert at $40/month (~$29/mo of
+  unrelated baseline spend + ~$10 for this project) — flag anything that
+  could meaningfully bill.

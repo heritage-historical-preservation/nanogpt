@@ -8,3 +8,4 @@ capabilities = "CAPABILITY_NAMED_IAM"
 confirm_changeset = false
 fail_on_empty_changeset = false
 tags = "project=\"nanogpt-sacred\""
+parameter_overrides = "MonthlyBudgetUsd=40"

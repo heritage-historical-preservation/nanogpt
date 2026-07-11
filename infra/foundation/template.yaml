@@ -19,7 +19,10 @@ Parameters:
     Description: Where budget alerts go.
   MonthlyBudgetUsd:
     Type: Number
-    Default: 10
+    # Account-level budget: ~$29/mo pre-existing baseline + ~$10 headroom
+    # for this project. (A tag-scoped project budget can be added once the
+    # project cost-allocation tag is activated in Billing.)
+    Default: 40
 
 Resources:
   # --- Data lake: one bucket, three zones (raw/, processed/, artifacts/) ---

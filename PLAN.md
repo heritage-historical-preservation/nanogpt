@@ -22,7 +22,7 @@ sitting, but shaped like its production counterpart.
 | CI/CD | GitHub Actions → ECR → `sam deploy`, auth via **GitHub OIDC → IAM role** | No long-lived AWS keys in CI |
 | Region | `us-east-1` (default; single-region) | Cheapest/most complete service coverage |
 | Naming prefix | `nanogpt-sacred-brandon` | S3 bucket names are global; prefix everything |
-| Budget guardrail | **AWS Budgets alert at $10/month** | Runaway-job protection, set up in Phase 1 |
+| Budget guardrail | **Account-level AWS Budgets alert at $40/month** (~$29 pre-existing baseline + ~$10 project headroom) | Runaway-job protection; optionally add a tag-scoped project budget once the `project` cost-allocation tag is activated |
 
 ## Target architecture
 
@@ -71,7 +71,7 @@ from their new homes.
 ### Phase 1 — Cloud foundation
 AWS account wiring: `aws configure`, base SAM stack (S3 bucket with
 `raw/`/`processed/`/`artifacts/` prefixes, ECR repo, OIDC role for GitHub
-Actions), AWS Budgets alert at $10/mo. CI workflow that validates + deploys the
+Actions), AWS Budgets alert at $40/mo (account-level). CI workflow that validates + deploys the
 stack on push.
 **Done when:** `git push` deploys the base stack; budget alert email confirmed.
 
@@ -111,7 +111,7 @@ dashboards/alarms, structured logs, cost tags.
       Refresh expired creds from the access portal (or set up `aws configure sso`).
 - [x] Region confirmed: `us-east-1`
 - [x] Naming prefix: `nanogpt-sacred-brandon`
-- [x] Budget alert created at $10/month (80% actual + 100% forecast → email)
+- [x] Budget alert created at $40/month (account-level: $29 baseline + $10 project headroom) (80% actual + 100% forecast → email)
 - [x] GitHub repo exists: `heritage-historical-preservation/nanogpt`
 
 ## Deployed resources (foundation stack: `nanogpt-sacred-foundation`)
