@@ -14,14 +14,14 @@ model.to(config.device)
 model.eval()
 
 # starting context — encode a prompt, or a single zero token for unconditioned sampling
-context = torch.tensor([tok.encode("To my friend, Alex, what will BrananoGpy say?")], dtype=torch.long, device=config.device)
+context = torch.tensor([tok.encode("Let's see how Nicole translates into alchemy")], dtype=torch.long, device=config.device)
 
 
 out = model.generate(context, max_new_tokens=500, temperature=1.0)
 print(f"\n{'='*60}\ntemperature = 1.0 and model = model_best.pt\n{'='*60}")
 print(tok.decode(out[0].tolist()))
 
-model.load_state_dict(torch.load(Path("model.pt"), map_location=config.device))
-out = model.generate(context, max_new_tokens=500, temperature=1.0)
-print(f"\n{'='*60}\ntemperature = 1.0 and model = overfit_model.pt\n{'='*60}")
-print(tok.decode(out[0].tolist()))
+# model.load_state_dict(torch.load(Path("model.pt"), map_location=config.device))
+# out = model.generate(context, max_new_tokens=500, temperature=1.0)
+# print(f"\n{'='*60}\ntemperature = 1.0 and model = overfit_model.pt\n{'='*60}")
+# print(tok.decode(out[0].tolist()))
