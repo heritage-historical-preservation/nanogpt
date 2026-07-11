@@ -106,13 +106,25 @@ dashboards/alarms, structured logs, cost tags.
 
 ## Prerequisites checklist
 
-- [ ] `aws configure` run locally (user does interactive auth; Claude runs CLI after)
-- [ ] Region confirmed: `us-east-1`
+- [x] AWS auth: SSO profile `485161492380_AdministratorAccess` (BrandonAdmin) is
+      the default via `AWS_PROFILE` in `~/.zshenv`; root login session removed.
+      Refresh expired creds from the access portal (or set up `aws configure sso`).
+- [x] Region confirmed: `us-east-1`
 - [x] Naming prefix: `nanogpt-sacred-brandon`
-- [ ] Budget alert created at $10/month (Phase 1)
+- [x] Budget alert created at $10/month (80% actual + 100% forecast → email)
 - [x] GitHub repo exists: `heritage-historical-preservation/nanogpt`
+
+## Deployed resources (foundation stack: `nanogpt-sacred-foundation`)
+
+| Resource | Value |
+|---|---|
+| Data bucket | `nanogpt-sacred-brandon-data` (zones: `raw/`, `processed/`, `artifacts/`; versioned) |
+| ECR repo | `485161492380.dkr.ecr.us-east-1.amazonaws.com/nanogpt-sacred-brandon` |
+| CI deploy role | `arn:aws:iam::485161492380:role/nanogpt-sacred-brandon-github-actions` (OIDC, main-branch only) |
 
 ## Status log
 
 - 2026-06-30 — Phase-less beginnings: local model built and trained end-to-end.
-- 2026-07-11 — Deployment direction + stack decided; this plan written; Phase 0 begun.
+- 2026-07-11 — Deployment direction + stack decided; this plan written; Phase 0
+  (monorepo restructure) and Phase 1 (cloud foundation: bucket, ECR, OIDC role,
+  budget, CI workflow) completed. Next: Phase 2, the ETL walking skeleton.

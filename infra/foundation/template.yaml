@@ -1,0 +1,178 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  nanogpt-sacred foundation: data lake bucket, container registry,
+  GitHub Actions OIDC deploy role, and the monthly budget guardrail.
+
+Parameters:
+  NamePrefix:
+    Type: String
+    Default: nanogpt-sacred-brandon
+    Description: Globally-unique prefix for named resources (S3 is global).
+  GithubRepo:
+    Type: String
+    Default: heritage-historical-preservation/nanogpt
+    Description: GitHub org/repo allowed to assume the deploy role.
+  BudgetEmail:
+    Type: String
+    Default: brandon@splicr.io
+    Description: Where budget alerts go.
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 10
+
+Resources:
+  # --- Data lake: one bucket, three zones (raw/, processed/, artifacts/) ---
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${NamePrefix}-data'
+      # Versioning doubles as the model-artifact version history.
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          # Cost guard: don't let old artifact versions pile up forever.
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+
+  # --- Container registry for ETL / training / serving images ---
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref NamePrefix
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        # Cost guard: keep only the 10 most recent images.
+        LifecyclePolicyText: |
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "keep last 10 images",
+              "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountMoreThan",
+                "countNumber": 10
+              },
+              "action": { "type": "expire" }
+            }]
+          }
+
+  # --- CI/CD identity: GitHub Actions assumes this role via OIDC ---
+  GithubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      # AWS now trusts GitHub's root CA directly; thumbprints kept for
+      # compatibility with regions/tooling that still require them.
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  GithubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${NamePrefix}-github-actions'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GithubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                # Only pushes to main on our repo may deploy.
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GithubRepo}:ref:refs/heads/main'
+      ManagedPolicyArns:
+        # PowerUser = everything except IAM; IAM is granted narrowly below.
+        - arn:aws:iam::aws:policy/PowerUserAccess
+      Policies:
+        - PolicyName: scoped-iam-for-sam-deploys
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # SAM stacks create/delete their own service roles, but only
+              # under our prefix — CI can never touch other IAM entities.
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${NamePrefix}-*'
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/nanogpt-*'
+              # Let CI update this stack's own OIDC provider if it changes.
+              - Effect: Allow
+                Action:
+                  - iam:GetOpenIDConnectProvider
+                  - iam:UpdateOpenIDConnectProviderThumbprint
+                  - iam:AddClientIDToOpenIDConnectProvider
+                  - iam:RemoveClientIDFromOpenIDConnectProvider
+                  - iam:TagOpenIDConnectProvider
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+
+  # --- The $10/month tripwire ---
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${NamePrefix}-monthly'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80          # percent of budget
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetEmail
+
+Outputs:
+  DataBucketName:
+    Value: !Ref DataBucket
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+  GithubActionsRoleArn:
+    Description: Set as AWS_DEPLOY_ROLE_ARN in the GitHub Actions workflow.
+    Value: !GetAtt GithubActionsRole.Arn
