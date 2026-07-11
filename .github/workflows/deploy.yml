@@ -36,3 +36,36 @@ jobs:
       - name: Deploy foundation stack
         working-directory: infra/foundation
         run: sam deploy --no-progressbar
+
+  deploy-etl:
+    needs: deploy-foundation
+    runs-on: ubuntu-latest
+    env:
+      ECR_REPO: 485161492380.dkr.ecr.us-east-1.amazonaws.com/nanogpt-sacred-brandon
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Log in to ECR
+        run: aws ecr get-login-password | docker login --username AWS --password-stdin "$ECR_REPO"
+
+      - name: Build and push ETL image
+        run: |
+          docker build -f services/etl/Dockerfile -t "$ECR_REPO:etl-${{ github.sha }}" -t "$ECR_REPO:etl-latest" .
+          docker push "$ECR_REPO:etl-${{ github.sha }}"
+          docker push "$ECR_REPO:etl-latest"
+
+      - name: Validate and deploy ETL stack
+        working-directory: infra/etl
+        run: |
+          sam validate --lint
+          sam deploy --no-progressbar \
+            --parameter-overrides "EtlImageUri=$ECR_REPO:etl-${{ github.sha }}"

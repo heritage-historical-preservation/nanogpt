@@ -1,9 +1,19 @@
+"""ETL: clean raw corpus text and emit the processed corpus + tokenizer meta.
+
+Runs in two places with the same code:
+- Locally:            python services/etl/prepare.py            (data/raw -> data/processed)
+- SageMaker Processing: the job mounts S3 inputs/outputs at
+  /opt/ml/processing/{input,output} and runs this script with those dirs.
+
+The transform is per-corpus cleaning for the source text (a 1913 scan with
+page markers, footnote anchors, and editorial brackets).
+"""
+
+import argparse
 import re
 from pathlib import Path
-from nanogpt.tokenizer import CharTokenizer
 
-RAW_PATH = Path("data/raw/source.txt")
-OUT_PATH = Path("data/processed/sample.txt")
+from nanogpt.tokenizer import CharTokenizer
 
 
 def strip_page_markers(text: str) -> str:
@@ -45,17 +55,32 @@ def clean(text: str) -> str:
     return text
 
 
+def run(input_dir: Path, output_dir: Path) -> None:
+    """Clean every .txt in input_dir into one corpus + tokenizer meta."""
+    txt_files = sorted(input_dir.glob("*.txt"))
+    if not txt_files:
+        raise FileNotFoundError(f"no .txt files found in {input_dir}")
 
-if __name__ == "__main__":
-    raw = RAW_PATH.read_text(encoding="utf-8")
+    # Concatenate all inputs into a single corpus (double newline seam).
+    raw = "\n\n".join(p.read_text(encoding="utf-8") for p in txt_files)
     cleaned = clean(raw)
 
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(cleaned, encoding="utf-8")
-    tok = CharTokenizer.from_text(cleaned)
-    tok.save(OUT_PATH.parent / "meta.json")
-    print(f"vocab_size:     {tok.vocab_size}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "sample.txt").write_text(cleaned, encoding="utf-8")
 
+    tok = CharTokenizer.from_text(cleaned)
+    tok.save(output_dir / "meta.json")
+
+    print(f"inputs:         {[p.name for p in txt_files]}")
+    print(f"vocab_size:     {tok.vocab_size}")
     print(f"raw length:     {len(raw)}")
     print(f"cleaned length: {len(cleaned)}")
     print(f"removed:        {len(raw) - len(cleaned)} chars")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input-dir", type=Path, default=Path("data/raw"))
+    parser.add_argument("--output-dir", type=Path, default=Path("data/processed"))
+    args = parser.parse_args()
+    run(args.input_dir, args.output_dir)

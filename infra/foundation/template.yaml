@@ -42,6 +42,11 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      # Emit object events to EventBridge so pipelines can trigger off
+      # drops into raw/ without bucket-notification spaghetti.
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
       LifecycleConfiguration:
         Rules:
           # Cost guard: don't let old artifact versions pile up forever.

@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  nanogpt-sacred ETL pipeline: a .txt dropped into the data bucket's raw/
+  prefix fires an EventBridge rule that starts a Step Functions execution,
+  which runs a SageMaker Processing job (the ETL container) that writes the
+  cleaned corpus + tokenizer meta to processed/.
+
+Parameters:
+  NamePrefix:
+    Type: String
+    Default: nanogpt-sacred-brandon
+  DataBucket:
+    Type: String
+    Default: nanogpt-sacred-brandon-data
+  EtlImageUri:
+    Type: String
+    Description: Full ECR image URI (with tag) for the ETL container.
+  ProcessingInstanceType:
+    Type: String
+    Default: ml.t3.medium   # ~$0.05/hr, billed per second of job runtime
+
+Resources:
+  # --- Role the Processing job itself runs as ---
+  ProcessingJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${NamePrefix}-etl-processing'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sagemaker.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: data-bucket-io
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:ListBucket]
+                Resource:
+                  - !Sub 'arn:aws:s3:::${DataBucket}'
+                  - !Sub 'arn:aws:s3:::${DataBucket}/raw/*'
+              - Effect: Allow
+                Action: [s3:PutObject]
+                Resource: !Sub 'arn:aws:s3:::${DataBucket}/processed/*'
+        - PolicyName: logs-and-image
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/sagemaker/*'
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${NamePrefix}'
+
+  # --- The pipeline: one state, run-processing-job (training joins it in Phase 6) ---
+  EtlStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub '${NamePrefix}-etl'
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - sagemaker:CreateProcessingJob
+                - sagemaker:DescribeProcessingJob
+                - sagemaker:StopProcessingJob
+                - sagemaker:AddTags
+              Resource: !Sub 'arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:processing-job/*'
+            - Effect: Allow
+              Action: iam:PassRole
+              Resource: !GetAtt ProcessingJobRole.Arn
+            # Required for the .sync integration: Step Functions listens for
+            # the job's completion event via a managed EventBridge rule.
+            - Effect: Allow
+              Action:
+                - events:PutTargets
+                - events:PutRule
+                - events:DescribeRule
+              Resource: !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForSageMakerProcessingJobsRule'
+      Definition:
+        Comment: raw/ drop -> SageMaker Processing (clean + tokenize meta) -> processed/
+        StartAt: RunEtlProcessingJob
+        States:
+          RunEtlProcessingJob:
+            Type: Task
+            # .sync = wait for the job to finish; execution fails if the job fails.
+            Resource: arn:aws:states:::sagemaker:createProcessingJob.sync
+            Parameters:
+              # Job names must be unique (and <= 63 chars); UUID keeps it so.
+              ProcessingJobName.$: States.Format('nanogpt-etl-{}', States.UUID())
+              RoleArn: !GetAtt ProcessingJobRole.Arn
+              AppSpecification:
+                ImageUri: !Ref EtlImageUri
+              ProcessingResources:
+                ClusterConfig:
+                  InstanceCount: 1
+                  InstanceType: !Ref ProcessingInstanceType
+                  VolumeSizeInGB: 5
+              StoppingCondition:
+                MaxRuntimeInSeconds: 900   # cost guard: kill anything over 15 min
+              ProcessingInputs:
+                - InputName: raw-text
+                  S3Input:
+                    # The specific object that landed, passed in by EventBridge.
+                    S3Uri.$: States.Format('s3://{}/{}', $.detail.bucket.name, $.detail.object.key)
+                    LocalPath: /opt/ml/processing/input
+                    S3DataType: S3Prefix
+                    S3InputMode: File
+              ProcessingOutputConfig:
+                Outputs:
+                  - OutputName: processed-corpus
+                    S3Output:
+                      S3Uri: !Sub 's3://${DataBucket}/processed'
+                      LocalPath: /opt/ml/processing/output
+                      S3UploadMode: EndOfJob
+            End: true
+
+  # --- Trigger: object created under raw/ with .txt suffix ---
+  RawDropRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${NamePrefix}-raw-drop'
+      EventPattern:
+        source: [aws.s3]
+        detail-type: [Object Created]
+        detail:
+          bucket:
+            name: [!Ref DataBucket]
+          object:
+            key:
+              # wildcard = prefix AND suffix (an array of prefix+suffix would be OR)
+              - wildcard: raw/*.txt
+      Targets:
+        - Id: start-etl
+          Arn: !Ref EtlStateMachine
+          RoleArn: !GetAtt EventsInvokeRole.Arn
+
+  EventsInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${NamePrefix}-etl-events-invoke'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-etl-execution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref EtlStateMachine
+
+Outputs:
+  EtlStateMachineArn:
+    Value: !Ref EtlStateMachine
