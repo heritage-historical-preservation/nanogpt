@@ -127,4 +127,13 @@ dashboards/alarms, structured logs, cost tags.
 - 2026-06-30 — Phase-less beginnings: local model built and trained end-to-end.
 - 2026-07-11 — Deployment direction + stack decided; this plan written; Phase 0
   (monorepo restructure) and Phase 1 (cloud foundation: bucket, ECR, OIDC role,
-  budget, CI workflow) completed. Next: Phase 2, the ETL walking skeleton.
+  budget, CI workflow) completed.
+- 2026-07-11 — Phase 2 complete, with a design upgrade: ETL runs as a
+  **SageMaker Processing job** (canonical containerized-batch pattern) instead
+  of a Lambda transform. Chain: S3 `raw/*.txt` drop → EventBridge (wildcard
+  pattern) → Step Functions → CreateProcessingJob.sync → `processed/`.
+  Verified cloud output byte-equivalent to local run (554,499 chars, vocab 83).
+  Gotchas hit: SageMaker instance quotas start at 0 (first run failed;
+  `ml.t3.medium` processing quota later showed 10); `ml.g4dn.xlarge` spot
+  training quota requested (PENDING) for Phase 3, fallback `ml.m5.large` (10).
+  Next: Phase 3, the training pipeline.
