@@ -2,6 +2,12 @@ version = 1
 revision = 2
 requires-python = ">=3.12"
 
+[manifest]
+members = [
+    "nanogpt",
+    "nanogpt-sacred",
+]
+
 [[package]]
 name = "cuda-bindings"
 version = "13.3.1"
@@ -171,9 +177,9 @@ wheels = [
 ]
 
 [[package]]
-name = "nanogpt-sacred"
+name = "nanogpt"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "libs/nanogpt" }
 dependencies = [
     { name = "numpy" },
     { name = "torch" },
@@ -184,6 +190,17 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.5.0" },
     { name = "torch", specifier = ">=2.12.1" },
 ]
+
+[[package]]
+name = "nanogpt-sacred"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "nanogpt" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "nanogpt", editable = "libs/nanogpt" }]
 
 [[package]]
 name = "networkx"

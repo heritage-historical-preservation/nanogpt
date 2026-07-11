@@ -1,7 +1,7 @@
 import torch
-from src.tokenizer import CharTokenizer
+from nanogpt.tokenizer import CharTokenizer
 from pathlib import Path
-from config import config
+from nanogpt.config import config
 
 
 class Dataset:
@@ -36,20 +36,24 @@ class Dataset:
     
 
 if __name__ == "__main__":
-    from src.dataset import Dataset
+    import torch
+    from nanogpt.model import GPT, Head
+
     ds = Dataset(config)
-    model_emb = GPT(config).to(config.device)   # your embedding-only GPT
+    model = GPT(config).to(config.device)
     head = Head(config, head_size=16).to(config.device)
 
     xb, _ = ds.get_batch("train")
-    x = model_emb(xb)                # (B, T, C) embeddings
+    # Grab the (B, T, C) embeddings from the model's input stage
+    # (token + position), before the blocks — the original visual check.
+    pos = torch.arange(xb.shape[1], device=xb.device)
+    x = model.token_embedding(xb) + model.position_embedding(pos)
     out = head(x)                    # (B, T, head_size)
     print(f"input:  {tuple(x.shape)}")     # (64, 256, 384)
     print(f"output: {tuple(out.shape)}")   # (64, 256, 16)
 
     # THE VISUAL CHECK: look at one attention matrix.
     # Re-run the internals for a tiny slice to see the weights.
-    import torch
     B, T, C = x.shape
     q, k = head.query(x), head.key(x)
     wei = q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5

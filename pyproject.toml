@@ -1,8 +1,14 @@
 [project]
 name = "nanogpt-sacred"
 version = "0.1.0"
+description = "Toy production deployment of a hand-built char-level GPT"
 requires-python = ">=3.12"
 dependencies = [
-    "numpy>=2.5.0",
-    "torch>=2.12.1",
+    "nanogpt",
 ]
+
+[tool.uv.workspace]
+members = ["libs/nanogpt"]
+
+[tool.uv.sources]
+nanogpt = { workspace = true }

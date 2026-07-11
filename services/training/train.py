@@ -1,8 +1,8 @@
 # train.py — the loop that pushes 4.61 down
 import torch
-from config import config
-from src.dataset import Dataset
-from src.model import GPT
+from nanogpt.config import config
+from nanogpt.dataset import Dataset
+from nanogpt.model import GPT
 
 
 ds = Dataset(config)

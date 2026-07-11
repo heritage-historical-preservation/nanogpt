@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from src.tokenizer import CharTokenizer
+from nanogpt.tokenizer import CharTokenizer
 
 RAW_PATH = Path("data/raw/source.txt")
 OUT_PATH = Path("data/processed/sample.txt")

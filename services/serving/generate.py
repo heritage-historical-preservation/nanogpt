@@ -1,9 +1,9 @@
 # generate.py — load trained weights, sample from the model
 from pathlib import Path
 import torch
-from config import config
-from src.model import GPT
-from src.tokenizer import CharTokenizer as tkzr
+from nanogpt.config import config
+from nanogpt.model import GPT
+from nanogpt.tokenizer import CharTokenizer as tkzr
 
 tok = tkzr.load(Path("data/processed/meta.json"))
 config.vocab_size = tok.vocab_size

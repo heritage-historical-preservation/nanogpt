@@ -10,32 +10,36 @@ A minimal nanoGPT-style implementation:
 - a single-file transformer (attention is the heart)
 - a clean training loop and autoregressive sampler
 
+Now growing into a **toy production deployment** on AWS — see `PLAN.md` for the
+architecture and roadmap.
+
 ## Layout
 
 ```
-config.py            # ALL hyperparameters in one place
+libs/nanogpt/nanogpt/  # shared core (installable package)
+  config.py            #   ALL hyperparameters in one place
+  tokenizer.py         #   char-level: build vocab, encode/decode
+  dataset.py           #   batching: sample sequences, make x/y pairs
+  model.py             #   the transformer itself
+services/
+  etl/prepare.py       # clean raw text        -> future S3-triggered Lambda
+  training/train.py    # training loop         -> future SageMaker job
+  serving/generate.py  # autoregressive sampling -> future Lambda + API GW
 data/
-  raw/               # downloaded source texts (gitignored)
-  processed/         # cleaned, concatenated corpus
-  prepare.py         # preprocess + tokenize -> train/val token arrays
-src/
-  tokenizer.py       # char-level: build vocab, encode/decode
-  dataset.py         # batching: sample sequences, make x/y pairs
-  model.py           # the transformer itself
-  train.py           # forward, loss, backward, step
-  generate.py        # autoregressive sampling from a trained model
-checkpoints/         # saved weights (gitignored)
-notebooks/
-  explore.ipynb      # poke at attention weights, embeddings, etc.
+  raw/                 # source texts (gitignored)  ~ S3 raw/
+  processed/           # cleaned corpus + meta.json ~ S3 processed/
+checkpoints/           # saved weights (gitignored) ~ S3 artifacts/
+infra/                 # SAM/CloudFormation templates (Phase 1+)
+notebooks/             # exploration
 ```
 
 ## How to run
 
 ```bash
-pip install -r requirements.txt
-python data/prepare.py        # build train/val token arrays
-python -m src.train           # train
-python -m src.generate        # sample from a checkpoint
+uv sync                                     # install the workspace
+uv run python services/etl/prepare.py       # clean raw -> data/processed/
+uv run python services/training/train.py    # train; best ckpt -> checkpoints/
+uv run python services/serving/generate.py  # sample from a trained checkpoint
 ```
 
 ## Notes

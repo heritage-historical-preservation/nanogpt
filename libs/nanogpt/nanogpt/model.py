@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config import config
+from nanogpt.config import config
 
 import torch.nn.functional as F
 
@@ -144,7 +144,7 @@ class GPT(nn.Module):
         return idx    
 
 if __name__ == "__main__":
-    from src.dataset import Dataset
+    from nanogpt.dataset import Dataset
     ds = Dataset(config)
     model = GPT(config).to(config.device)   # your embedding-only GPT
 
